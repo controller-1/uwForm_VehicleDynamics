@@ -1,9 +1,9 @@
 %% main_braking
 % Purpose:
-%   main file to simulate vehicle dynamics behavior under braking scenarios
+%   main file to simulate vehicle dynamics behavior under braking scenarios, throttle,
 %   and minor steering maneuvers
 % Inputs:
-%   Steering angle, brake torque 
+%   Steering angle, brake torque, throttle torque
 %
 % Limitations of the model:
 %   Many of the limitations take form of simplifying assumptions within
@@ -20,8 +20,8 @@
 %###################################################################
 load('T32CarParamObj.mat');
 
-tfinal          = 5;                   % simulation time [sec.]
-delt            = 0.0001;                 % simulation time step [sec.]
+tfinal          = 5;                    % simulation time [sec.]
+delt            = 0.0001;               % simulation time step [sec.]
 t               = 0:delt:tfinal;        % time sequence
 
 % Assume vehicle starts at steady state velocity > 0 travelling in straight
@@ -37,9 +37,9 @@ YawRAcc0        = 0;                    % initial yaw rate accel. of vehicle COG
 
 X0              = 0;                    % initial X-axis Coord of vehicle COG w.r.t. Earth fixed reference frame [m]
 Y0              = 0;                    % initial Y-axis Coord of vehicle COG w.r.t. Earth fixed reference frame [m]
-PsiA0           = 0;                 % initial angle between x-axis of E.Fixed reference frame and vehicle frame [rad]
+PsiA0           = 0;                    % initial angle between x-axis of E.Fixed reference frame and vehicle frame [rad]
 
-Bd              = [0.00001;0.00001];      % Wheel speed damping coefficient
+Bd              = [0.00001;0.00001];    % Wheel speed damping coefficient
 Iveh            = 240;                  % vehicle moment of inertia
 
 
@@ -71,6 +71,10 @@ if MeasuredFlag2 == 1
 elseif MeasuredFlag2 == 2
     FW_Ang = SP2(t,1,2,0);
 end
+
+%%%% Throttle Profile
+%% 
+
 
 %###################################################################
 %######################  Run Simulation  ###########################
@@ -109,15 +113,13 @@ wgpv                = zeros(4,length(t));                   % wheel ground point
 wgpv_comp           = zeros(4,length(t));
 rewv                = zeros(4,length(t));                   % rotational equivalent wheel velocity [m/s]
 cam_ang             = [car.staticCamberF,car.staticCamberR];% static camber angles [deg]
-%cam_ang = [-16.0,-16.0];
-%cam_ang             = [0,0];
-a_w                 = zeros(4,length(t));                   % wheel side slip angle [rad]
+a_w                 = zeros(4,length(t));                   % tire side slip angle [rad]
 lSR                 = zeros(4,length(t));                   % longitudinal slip ratio
 FX                  = zeros(4,length(t));                   % equivalent vehicle x-axis tire forces [N]
 FY                  = zeros(4,length(t));                   % equivalent vehicle y-axis tire forces [N]
 R                   = car.wheel_dia/2;                      % unloaded wheel/tire radius
 
-Fzw                  = zeros(4,length(t));                   % dynamic vertical wheel forces
+Fzw                  = zeros(4,length(t));                  % dynamic vertical wheel forces
 FzCOP               = zeros(4,length(t));                   % Aerodynamic Forces @ COP [N]
 LongWT              = zeros(1,length(t));                   % Longitudinal Weight transfer
 % Static vertical tire forces before load transfer and aero
@@ -163,18 +165,14 @@ for i = 1:length(t)
         RLFZCurrent     = RL_static - (LongWT(i) / 2) + (rearFZAero / 2);
         RRFZCurrent     = RR_static - (LongWT(i) / 2) + (rearFZAero / 2);
         Fz              = [FLFZCurrent,FRFZCurrent,RLFZCurrent,RRFZCurrent];
-        %Fz = [FL_static,FR_static,RL_static,RR_static];
-        %Fz = [FL_static,FR_static,200,200];
-        %Fz = [FL_static,FR_static,FL_static,FR_static];
         Fzw(:,i)        = Fz.';
 
         % Compute tire forces
         if i+1 <= length(t)
-            %[Fl(:,i),Fc(:,i),lSR(:,i)]= Pacejka_Tire_Forces(car.tire,car.roadCoefficient,1,cam_ang,Beta(1,i),VcogMag(1,i),YawR(1,i),Fz,FW_Ang(i),car.Ftrack,car.Rtrack,car.cg2faxle,car.cg2raxle,R,w_w(:,i).');
             [Fl(:,i),Fc(:,i),lSR(:,i),wgpv(:,i),rewv(:,i),a_w(:,i),cog2cop(:,i),copAng(:,i),wgpv_comp(:,i)]= Pacejka_Tire_Forces(car.tire,car.roadCoefficient,...
                 0,cam_ang,Beta(1,i),VcogMag(1,i),YawR(1,i),Fz,FW_Ang(i),car.Ftrack,car.Rtrack,car.cg2faxle,car.cg2raxle,R,w_w(:,i).');
             
-            % Simplified long. force calculation
+            % Simplified long. force calculation for comparison
             Cx = 23782.44; %long tire stiffness
             Fl2(:,i) = Cx*lSR(:,i);
         end
@@ -186,7 +184,7 @@ for i = 1:length(t)
             [w_w(:,i+1),w_acc(:,i+1)]  = wheel_speed_TEST(Fl(:,i),0,W_TB(:,i),Bd,0.15,R,delt,w_w(:,i));
         end        
         
-        % Compute equivalent axis component forces from long./lateral tire forces
+        % Compute transformed axis component forces from long./lateral tire forces
         [fx,fy]= TireForces_COG(Fl(:,i),Fc(:,i),FW_Ang(i),car.maxWangle);
         for j = 1:4
             FX(j,i) = fx(j,1);
@@ -195,8 +193,7 @@ for i = 1:length(t)
        
         % Simulate Nonlinear 2D Chassis model
         if i+1 <= length(t)
-            %x0 = [0;Vcog(1,i);0;Vcog(2,i);YawP(1,i);YawR(1,i);XYc(1,i);XYc(2,i);PsiA(1,i)];
-            %[vcog,acog,beta,yaw,xym,vxym,psi] = PlantModel_2D(FX(:,i).',FY(:,i).',x0,car.mass,Iveh,car.cg2faxle,car.cg2raxle,car.wheelbase,delt);
+
             x0 = [Vcog(1,i);Vcog(2,i);YawP(1,i);YawR(1,i);XYc(1,i);XYc(2,i)];
             [vcog,acog,beta,yaw,xym,vxym,psi] = PlantModel_2D_TEST(FX(:,i).',FY(:,i).',x0,car.mass,Iveh,car.cg2faxle,car.cg2raxle,car.wheelbase,delt);
             Vcog(:,i+1)     = [vcog(1,1);vcog(2,1)];
@@ -211,7 +208,7 @@ for i = 1:length(t)
             
             VcogMag(1,i+1)  = sqrt(vcog(1,1)^2 + vcog(2,1)^2);
         end
-    elseif Vcog(1,i)<=0
+    elseif Vcog(1,i)<=0  % Stop simulation when vehicle begins to move in reverse. Model does not like this. 
         break
     end
 end
@@ -444,21 +441,6 @@ ylabel('Velocity (m/s)')
 legend('x-comp.','y-comp')
 title('FR WGPV Components')
 grid on
-
-
-% figure(12)
-% yyaxis left
-% plot(t,wgpv(1,:),'-b',t,rewv(1,:),'-r',t,Vcog(1,:),'--k')
-% hold on
-% plot(ones(1,length(t)).*1.5,linspace(14,15.5,length(t)),'--k')
-% ylabel('Velocities (m/s)')
-% xlim([0.9 2.1])
-% ylim([14.4 15.2])
-% xlabel('t (sec)')
-% yyaxis right
-% plot(t(1:end-1),ddtWGPV,t(1:end-1),ddtREWV,'--')
-% legend('WGPV','REWV','COG Vx','t=1.5 Centerline','WGPV slope','REWV slope')
-% grid on
 
 figure('Name','Output: Tire Side Slip Angle','NumberTitle','off')
 plot(t,rad2deg(a_w(1:4,:)))
