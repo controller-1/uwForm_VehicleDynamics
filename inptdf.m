@@ -1,0 +1,1 @@
+function [result]=inptdf(text,default)% Executes result=input([text ': ']) and if the response% is a carriage return sets result=default.%% Version: 15Nov97% M.C. Bergresult=input([text ': ']);if isempty(result) result=default;end% Last Line
