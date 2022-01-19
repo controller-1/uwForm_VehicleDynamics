@@ -1,6 +1,5 @@
 # uwForm_VehicleDynamics
 
-**Currently under development**
 
 'main.m' is the main file and contains a 3DOF vehicle dynamic model utilizing the Pacejka tire model. The model can be used for braking/throttle and steering inputs. 
 
